@@ -22,7 +22,7 @@ contract EthVesting{
     }
     function getVestingReleased(address _employee) external view returns (uint256) {
         Employee memory employee = employees[_employee];
-        return (employee.startTime);
+        return (employee.released);
     }
 
     mapping(address => Employee) public employees;

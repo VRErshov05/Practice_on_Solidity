@@ -1,5 +1,6 @@
-const { expect, assert } = require("chai");
+const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { network } = require("hardhat");
 
 
 describe("AutoAccountant", function () {
@@ -8,9 +9,11 @@ describe("AutoAccountant", function () {
   let staking;
   let owner;
   let employee;
+  let employee2;
+  let employee3;
 
   beforeEach(async function () {
-    [owner, employee] = await ethers.getSigners();
+    [owner, employee, employee2, employee3] = await ethers.getSigners();
 
     // Развертывание контракта EthVesting
     const EthVesting = await ethers.getContractFactory("EthVesting");
@@ -91,7 +94,7 @@ describe("AutoAccountant", function () {
 
     const finalEmployeeBalance = await ethers.provider.getBalance(employee.address);
     // Проверяем, что баланс увеличился на ожидаемую сумму
-    const expectedSalary = 10001000000000000000000n; // ожидаемая зарплата
+    const expectedSalary = 10001000000000000000000n; // ожидаемый баланс
     expect(finalEmployeeBalance).to.equal(expectedSalary);
     
   });
@@ -148,7 +151,7 @@ describe("AutoAccountant", function () {
     expect(VestingDuration).to.equal(expectedVestingDuration);
   });
 
-  
+  //Проверяет, правильно ли работает вестинг. Смотрит чтобы точную сумму переводил через 30 секунд из 60, и через 130 секунд чтобы выводил не больше 6000.
   it("Must correctly release Ethereum westing", async function () {
 
     const tx = await owner.sendTransaction({
@@ -157,15 +160,27 @@ describe("AutoAccountant", function () {
     });
     await tx.wait();
 
+    const tx2 = await owner.sendTransaction({
+      to: await ethVesting.getAddress(),
+      value: 100000000000000000000n
+    });
+    await tx2.wait();
+
     await autoAccountant.sendToVesting(
       employee.address, // адрес сотрудника
-      6000, // ставка
+      60000000000000000000n, // ставка
       60 // время вестинга
     );
+    const firstEmployeeBalance = await ethers.provider.getBalance(employee.address);
+    console.log(`FirstEmployeeBalance ${firstEmployeeBalance}`);
 
+    async function increaseTime(seconds) {
+      await network.provider.send("evm_increaseTime", [seconds]);
+      await network.provider.send("evm_mine");
+    }
     // Проверяем, что вестинг сумма увеличилась на ожидаемую сумму
     const VestingTotalAmount = await ethVesting.getVestingTotalAmount(employee.address);
-    const expectedVestingAmount = 6000; // ожидаемая сумма для вестинга
+    const expectedVestingAmount = 60000000000000000000n; // ожидаемая сумма для вестинга
     expect(VestingTotalAmount).to.equal(expectedVestingAmount);
 
     // Проверяем корректность времени стейкинга
@@ -174,9 +189,105 @@ describe("AutoAccountant", function () {
     expect(VestingDuration).to.equal(expectedVestingDuration);
 
 
-    
+    //нужно промотать время на 30 секунд
+    await increaseTime(29);
+
+    const VestingEmployeeConnect = autoAccountant.connect(employee);
+    await VestingEmployeeConnect.releaseVested(); 
     const VestingReleased = await ethVesting.getVestingReleased(employee.address);
-    const expectedVestingReleased = 3000; // ожидаемое количество выпущенной валюты через 30 секунд
+    const expectedVestingReleased = 30000000000000000000n; // ожидаемое количество выпущенной валюты через 30 секунд
     expect(VestingReleased).to.equal(expectedVestingReleased);
+
+  
+
+    //нужно перемотать время на 100 секунд
+    await increaseTime(99);
+    
+    await VestingEmployeeConnect.releaseVested(); 
+    const VestingReleased2 = await ethVesting.getVestingReleased(employee.address);
+    const expectedVestingReleased2 = 60000000000000000000n; // ожидаемое количество выпущенной валюты через 130 секунд
+    expect(VestingReleased2).to.equal(expectedVestingReleased2);
+
+
+  });
+
+  it("Must correctly release Ethereum staking", async function () {
+
+    const tx = await owner.sendTransaction({
+      to: await autoAccountant.getAddress(),
+      value: 1000000000000000000000n
+    });
+    await tx.wait();
+
+    const tx2 = await owner.sendTransaction({
+      to: await staking.getAddress(),
+      value: 1000000000000000000000n
+    });
+    await tx2.wait();
+
+    const firstEmployee2Balance = await ethers.provider.getBalance(employee2.address);
+    console.log(`FirstEmployeeBalance 1: ${firstEmployee2Balance}`);
+
+    const firstEmployee3Balance = await ethers.provider.getBalance(employee3.address);
+    console.log(`FirstEmployeeBalance 1: ${firstEmployee3Balance}`);
+
+
+    async function increaseTime(seconds) {
+      await network.provider.send("evm_increaseTime", [seconds]);
+      await network.provider.send("evm_mine");
+    }
+
+    await autoAccountant.SalaryCalculation(
+      100000000000000000n, // ставка
+      100, // отработанные часы
+      0, // часы на больничном
+      100, // процент больничной ставки
+      10, // процент для стейкинга
+      employee2.address // адрес сотрудника
+    );
+    await autoAccountant.sendSalaryToStaking();
+    const finalStakerInfo = await staking.getStakeHolderAmount(employee2.address);
+    // Проверяем, что стейкинг сумма увеличилась на ожидаемую сумму
+    const expectedStakingAmount = 1000000000000000000n; // ожидаемая сумма для стейкинга
+    expect(finalStakerInfo).to.equal(expectedStakingAmount);
+
+
+    
+    increaseTime(86399);
+    
+    await autoAccountant.SalaryCalculation(
+      100000000000000000n, // ставка
+      100, // отработанные часы
+      0, // часы на больничном
+      100, // процент больничной ставки
+      10, // процент для стейкинга
+      employee3.address // адрес сотрудника
+    );
+    await autoAccountant.sendSalaryToStaking();
+    console.time('Transaction time for test 6');
+    const finalStakerInfo1 = await staking.getStakeHolderAmount(employee3.address);
+    // Проверяем, что стейкинг сумма увеличилась на ожидаемую сумму
+    const expectedStakingAmount1 = 1000000000000000000n; // ожидаемая сумма для стейкинга
+    expect(finalStakerInfo1).to.equal(expectedStakingAmount1);
+
+    
+    increaseTime(86399);
+    
+    console.timeEnd('Transaction time for test 6');
+
+    const StakingEmployee2Connect = autoAccountant.connect(employee2);
+    await StakingEmployee2Connect.releaseStaked();
+
+    const StakingEmployee3Connect = autoAccountant.connect(employee3);
+    await StakingEmployee3Connect.releaseStaked();
+    
+
+    const finalEmployee2ReleasedStaked = await staking.getStakeHolderlastReleasedAmount(employee2.address);
+    expect(finalEmployee2ReleasedStaked).to.equal(1537844150000000000n); //((4150000000000*86400) + (4150000000000*86400/2)) + 4150000000000(2 секунды на выполнение проги) + 10^18 = 1537844150000000000
+
+    const finalEmployee3ReleasedStaked = await staking.getStakeHolderlastReleasedAmount(employee3.address);
+    expect(finalEmployee3ReleasedStaked).to.equal(1179284150000000000n); //(4150000000000*86400/2) + 4150000000000(2 секунды на выполнение проги) + 10^18 = 1179280000000000000
+
+    
   });
 });
