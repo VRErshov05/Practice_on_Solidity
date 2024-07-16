@@ -11,6 +11,8 @@ contract Staking {
         uint256 rewardDebt; // Накопленные вознаграждения
         uint256 lastReleasedAmount;
     }
+
+    //для тестов
     function getStakeHolderlastReleasedAmount(address _employee) external view returns (uint256) {
         Stakeholder memory employee = stakeholders[_employee];
         return (employee.lastReleasedAmount);
@@ -19,7 +21,6 @@ contract Staking {
         Stakeholder memory employee = stakeholders[_employee];
         return (employee.stakedAmount);
     }
-
 
     mapping(address => Stakeholder) public stakeholders; // Маппинг пользователей и их стейкинга
     uint256 public totalStakedAmount; // Общая сумма стейкинга
